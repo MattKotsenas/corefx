@@ -318,4 +318,7 @@
   <data name="ArgumentAndArgumentListInitialized" xml:space="preserve">
     <value>Only one of Arguments or ArgumentList may be used.</value>
   </data>
+  <data name="EnableRaisingEventsRequired" xml:space="preserve">
+    <value>EnableRaisingEvents must be true before waiting for exit asynchronously.</value>
+  </data>
 </root>
