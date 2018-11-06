@@ -1217,6 +1217,78 @@ namespace System.Diagnostics
             return StartCore(startInfo);
         }
 
+
+        // TODO: MATTKOT: Add overloads
+        public async Task<ProcessResult> StartAndWaitForExitAsync(CancellationToken cancellationToken = default)
+        {
+            EnableRaisingEvents = true;
+
+            // TODO: MATTKOT: There has to be a better way to do this
+            var outputTcs = new TaskCompletionSource<object>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var errorTcs = new TaskCompletionSource<object>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+            Start(); // TODO: MATTKOT: What to do about false?
+
+            var outputWriter = StreamWriter.Null;
+            var errorWriter = StreamWriter.Null;
+
+            if (StartInfo.RedirectStandardOutput)
+            {
+                outputWriter = new StreamWriter(new MemoryStream(), _standardOutput.CurrentEncoding);
+                OutputDataReceived += (sender, args) =>
+                {
+                    if (args.Data == null || cancellationToken.IsCancellationRequested)
+                    {
+                        outputTcs.TrySetResult(null);
+                    }
+                    else
+                    {
+                        outputWriter.WriteLine(args.Data);
+                    }
+                };
+
+                BeginOutputReadLine();
+            }
+            else
+            {
+                outputTcs.TrySetResult(null);
+            }
+
+            if (StartInfo.RedirectStandardError)
+            {
+                errorWriter = new StreamWriter(new MemoryStream(), _standardError.CurrentEncoding);
+                ErrorDataReceived += (sender, args) =>
+                {
+                    if (args.Data == null || cancellationToken.IsCancellationRequested)
+                    {
+                        errorTcs.TrySetResult(null);
+                    }
+                    else
+                    {
+                        errorWriter.WriteLine(args.Data);
+                    }
+                };
+
+                BeginErrorReadLine();
+            }
+            else
+            {
+                errorTcs.TrySetResult(null);
+            }
+
+            var exited = await WaitForExitAsync(cancellationToken).ConfigureAwait(false);
+            await Task.WhenAll(outputTcs.Task, errorTcs.Task).ConfigureAwait(false);
+
+            outputWriter.Flush();
+            errorWriter.Flush();
+            outputWriter.BaseStream.Seek(0, SeekOrigin.Begin);
+            errorWriter.BaseStream.Seek(0, SeekOrigin.Begin);
+
+            var exitCode = exited ? ExitCode : (int?)null;
+
+            return new ProcessResult(exited, exitCode, outputWriter.BaseStream, errorWriter.BaseStream);
+        }
+
         /// <devdoc>
         ///    <para>
         ///       Starts a process resource by specifying the name of a

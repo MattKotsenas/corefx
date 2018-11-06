@@ -113,6 +113,7 @@ namespace System.Diagnostics
         protected void OnExited() { }
         public void Refresh() { }
         public bool Start() { throw null; }
+        public Threading.Tasks.Task<ProcessResult> StartAndWaitForExitAsync(System.Threading.CancellationToken cancellationToken = default) { throw null; }
         public static System.Diagnostics.Process Start(System.Diagnostics.ProcessStartInfo startInfo) { throw null; }
         public static System.Diagnostics.Process Start(string fileName) { throw null; }
         public static System.Diagnostics.Process Start(string fileName, string arguments) { throw null; }
@@ -269,5 +270,17 @@ namespace System.Diagnostics
     {
         public MonitoringDescriptionAttribute(string description) { throw null; }
         public override string Description { get { throw null; } }
+    }
+
+    public class ProcessResult : IDisposable
+    {
+        internal ProcessResult() { }
+
+        public bool Exited { get { throw null; } }
+        public int? ExitCode { get { throw null; } }
+        public System.IO.StreamReader StandardOutput { get { throw null; } }
+        public System.IO.StreamReader StandardError { get { throw null; } }
+
+        public void Dispose() { }
     }
 }

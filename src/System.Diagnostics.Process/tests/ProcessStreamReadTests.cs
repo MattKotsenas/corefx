@@ -6,7 +6,10 @@ using System.IO;
 using System.Text;
 using System.Threading;
 using System.Collections.Generic;
+using System.Threading.Tasks;
 using Xunit;
+
+// TODO: MATTKOT: Use a sleep / signal in the process, along with Task.Run() to test races where cancellation happens during std out read to ensure that there aren't read races
 
 namespace System.Diagnostics.Tests
 {
@@ -52,6 +55,26 @@ namespace System.Diagnostics.Tests
         }
 
         [Fact]
+        public async Task TestAsyncErrorStreamAsync()
+        {
+            Process p = CreateProcessPortable(RemotelyInvokable.ErrorProcessBody);
+            p.StartInfo.RedirectStandardError = true;
+
+            using (var cts = new CancellationTokenSource())
+            {
+                cts.CancelAfter(WaitInMS);
+                using (var result = await p.StartAndWaitForExitAsync(cts.Token))
+                {
+                    Assert.True(result.Exited);
+
+                    string expected = RemotelyInvokable.TestConsoleApp + " started error stream" + Environment.NewLine +
+                                      RemotelyInvokable.TestConsoleApp + " closed error stream" + Environment.NewLine;
+                    Assert.Equal(expected, result.StandardError.ReadToEnd());
+                }
+            }
+        }
+
+        [Fact]
         public void TestSyncOutputStream()
         {
             Process p = CreateProcessPortable(RemotelyInvokable.StreamBody);
@@ -85,6 +108,26 @@ namespace System.Diagnostics.Tests
 
                 string expected = RemotelyInvokable.TestConsoleApp + " started" + (i == 1 ? "" : RemotelyInvokable.TestConsoleApp + " closed");
                 Assert.Equal(expected, sb.ToString());
+            }
+        }
+
+        [Fact]
+        public async Task TestAsyncOutputStreamAsync()
+        {
+            Process p = CreateProcessPortable(RemotelyInvokable.StreamBody);
+            p.StartInfo.RedirectStandardOutput = true;
+
+            using (var cts = new CancellationTokenSource())
+            {
+                cts.CancelAfter(WaitInMS);
+                using (var result = await p.StartAndWaitForExitAsync(cts.Token))
+                {
+                    Assert.True(result.Exited);
+
+                    string expected = RemotelyInvokable.TestConsoleApp + " started" + Environment.NewLine +
+                                      RemotelyInvokable.TestConsoleApp + " closed" + Environment.NewLine;
+                    Assert.Equal(expected, result.StandardOutput.ReadToEnd());
+                }
             }
         }
 
@@ -201,6 +244,27 @@ namespace System.Diagnostics.Tests
         }
 
         [Fact]
+        [SkipOnTargetFramework(TargetFrameworkMonikers.NetFramework, "There is 2 bugs in Desktop in this codepath, see: dotnet/corefx #18437 and #18436")]
+        [SkipOnTargetFramework(TargetFrameworkMonikers.Uap, "No simple way to perform this on uap using cmd.exe")]
+        public async Task TestAsyncHalfCharacterAtATimeAsync()
+        {
+            Process p = CreateProcessPortable(RemotelyInvokable.WriteSlowlyByByte);
+            p.StartInfo.RedirectStandardOutput = true;
+            p.StartInfo.StandardOutputEncoding = Encoding.Unicode;
+
+            using (var cts = new CancellationTokenSource())
+            {
+                cts.CancelAfter(WaitInMS);
+                using (var result = await p.StartAndWaitForExitAsync(cts.Token))
+                {
+                    Assert.True(result.Exited);
+
+                    Assert.Equal("a" + Environment.NewLine, result.StandardOutput.ReadToEnd());
+                }
+            }
+        }
+
+        [Fact]
         public void TestManyOutputLines()
         {
             const int ExpectedLineCount = 144;
@@ -226,6 +290,33 @@ namespace System.Diagnostics.Tests
 
             Assert.Equal(ExpectedLineCount, nonWhitespaceLinesReceived);
             Assert.Equal(ExpectedLineCount + 1, totalLinesReceived);
+        }
+
+        [Fact]
+        public async Task TestManyOutputLinesAsync()
+        {
+            const int ExpectedLineCount = 144;
+
+            int totalLinesReceived = 0;
+
+            Process p = CreateProcessPortable(RemotelyInvokable.Write144Lines);
+            p.StartInfo.RedirectStandardOutput = true;
+
+            using (var cts = new CancellationTokenSource())
+            {
+                cts.CancelAfter(WaitInMS);
+                using (var result = await p.StartAndWaitForExitAsync(cts.Token))
+                {
+                    Assert.True(result.Exited);
+
+                    while (result.StandardOutput.ReadLine() != null)
+                    {
+                        totalLinesReceived++;
+                    }
+                }
+            }
+
+            Assert.Equal(ExpectedLineCount, totalLinesReceived);
         }
 
         [Fact]
@@ -296,12 +387,47 @@ namespace System.Diagnostics.Tests
 
             Thread.Sleep(100);
 
-            Assert.Equal("This is a line to output" + Environment.NewLine, output.ReadToEnd());
-            Assert.Equal("This is a line to error" + Environment.NewLine, error.ReadToEnd());
+            var expectedOutput = $"This is the first line to output{Environment.NewLine}This is the second line to output{Environment.NewLine}";
+            var expectedError = $"This is the first line to error{Environment.NewLine}This is the second line to error{Environment.NewLine}";
+
+            Assert.Equal(expectedOutput, output.ReadToEnd());
+            Assert.Equal(expectedError, error.ReadToEnd());
         }
 
         [Fact]
-        public void TestStreamNegativeTests()
+        public async Task TestTimeoutOfStartAndWaitForExitAsyncDoesNotCloseStreams()
+        {
+            Process p = CreateProcessPortable(RemotelyInvokable.WriteLinesAfterSignal);
+            p.StartInfo.RedirectStandardInput = true;
+            p.StartInfo.RedirectStandardOutput = true;
+            p.StartInfo.RedirectStandardError = true;
+
+            using (var cts = new CancellationTokenSource(0))
+            {
+                var result = await p.StartAndWaitForExitAsync(cts.Token);
+                Assert.False(result.Exited);
+
+                var expectedOutput = $"This is the first line to output{Environment.NewLine}This is the second line to output{Environment.NewLine}";
+                var expectedError = $"This is the first line to error{Environment.NewLine}This is the second line to error{Environment.NewLine}";
+
+                //Assert.Equal(expectedOutput, result.StandardOutput.ReadToEnd());
+                //Assert.Equal(expectedError, result.StandardError.ReadToEnd());
+
+                p.StandardInput.WriteLine();
+                Assert.True(p.WaitForExit(WaitInMS));
+
+                var expectedOutput2 = $"This is the first line to output{Environment.NewLine}This is the second line to output{Environment.NewLine}";
+                var expectedError2 = $"This is the first line to error{Environment.NewLine}This is the second line to error{Environment.NewLine}";
+
+                Assert.Equal(expectedOutput2, result.StandardOutput.ReadToEnd());
+                Assert.Equal(expectedError2, result.StandardError.ReadToEnd());
+
+                // TODO: MATTKOT: Bit off too much again. StartAndWaitForExit should just do that. If you need to move the output, that's yet another method.
+            }
+        }
+
+        [Fact]
+        public async Task TestStreamNegativeTests()
         {
             {
                 Process p = new Process();
@@ -327,6 +453,24 @@ namespace System.Diagnostics.Tests
                 Assert.Throws<InvalidOperationException>(() => p.StandardOutput);
                 Assert.Throws<InvalidOperationException>(() => p.StandardError);
                 Assert.True(p.WaitForExit(WaitInMS));
+            }
+
+            {
+                Process p = CreateProcessPortable(RemotelyInvokable.StreamBody);
+                p.StartInfo.RedirectStandardOutput = true;
+                p.StartInfo.RedirectStandardError = true;
+
+                using (var cts = new CancellationTokenSource())
+                {
+                    cts.CancelAfter(WaitInMS);
+                    using (var result = await p.StartAndWaitForExitAsync(cts.Token))
+                    {
+                        Assert.True(result.Exited);
+                    }
+                }
+
+                Assert.Throws<InvalidOperationException>(() => p.StandardOutput);
+                Assert.Throws<InvalidOperationException>(() => p.StandardError);
             }
 
             {

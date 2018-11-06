@@ -27,6 +27,7 @@
     <Compile Include="System\Diagnostics\ProcessModule.cs" />
     <Compile Include="System\Diagnostics\ProcessModuleCollection.cs" />
     <Compile Include="System\Diagnostics\ProcessPriorityClass.cs" />
+    <Compile Include="System\Diagnostics\ProcessResult.cs" />
     <Compile Include="System\Diagnostics\ProcessStartInfo.cs" />
     <Compile Include="System\Diagnostics\ProcessThread.cs" />
     <Compile Include="System\Diagnostics\ProcessThreadCollection.cs" />

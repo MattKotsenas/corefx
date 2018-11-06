@@ -163,16 +163,18 @@ namespace System.Diagnostics.Tests
 
         public static int WriteLinesAfterSignal()
         {
+            Console.WriteLine("This is the first line to output");
+            Console.Error.WriteLine("This is the first line to error");
             Console.ReadLine();
-            Console.WriteLine("This is a line to output");
-            Console.Error.WriteLine("This is a line to error");
+            Console.WriteLine("This is the second line to output");
+            Console.Error.WriteLine("This is the second line to error");
 
             return SuccessExitCode;
         }
 
         public static string WriteLinesAfterSignalUapCmd()
         {
-            return "(findstr -src:^..*$) & (timeout /t 1) & (echo This is a line to output) & (echo This is a line to error 1>&2)";
+            return "(echo This is the second line to output) & (echo This is the second line to error 1>&2) & (findstr -src:^..*$) & (timeout /t 1) & (echo This is the first line to output) & (echo This is the first line to error 1>&2)";
         }
 
         public static string ConcatThreeArgumentsUapCmd(string one, string two, string three)
