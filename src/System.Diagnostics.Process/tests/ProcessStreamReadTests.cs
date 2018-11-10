@@ -231,39 +231,58 @@ namespace System.Diagnostics.Tests
         [Fact]
         public void TestClosingStreamsAsyncDoesNotThrow()
         {
-            Process p = CreateProcessPortable(RemotelyInvokable.WriteLinesAfterClose);
+            Process p = CreateProcessPortable(RemotelyInvokable.WriteLinesAfterSignal);
+            p.StartInfo.RedirectStandardInput = true;
             p.StartInfo.RedirectStandardOutput = true;
             p.StartInfo.RedirectStandardError = true;
 
             // On netfx, the handler is called once with the Data as null, even if the process writes nothing to the pipe.
             // That behavior is documented here https://docs.microsoft.com/en-us/dotnet/api/system.diagnostics.datareceivedeventhandler
-            p.OutputDataReceived += (s, e) => { Assert.True(PlatformDetection.IsFullFramework && e.Data == null, "OutputDataReceived called after closing the process"); };
-            p.ErrorDataReceived += (s, e) => { Assert.True(PlatformDetection.IsFullFramework && e.Data == null, "ErrorDataReceived called after closing the process"); };
+            var outputHandlerCalled = false;
+            var errorHandlerCalled = false;
+            p.OutputDataReceived += (s, e) =>
+            {
+                var callbackAllowed = PlatformDetection.IsFullFramework && e.Data == null && !outputHandlerCalled;
+                Assert.True(callbackAllowed, "OutputDataReceived called after closing the process");
+                outputHandlerCalled = true;
+            };
+            p.ErrorDataReceived += (s, e) =>
+            {
+                var callbackAllowed = PlatformDetection.IsFullFramework && e.Data == null && !errorHandlerCalled;
+                Assert.True(callbackAllowed, "ErrorDataReceived called after closing the process");
+                errorHandlerCalled = true;
+            };
 
             p.Start();
             p.BeginOutputReadLine();
             p.BeginErrorReadLine();
 
+            p.StandardInput.WriteLine();
             p.Close();
-            RemotelyInvokable.FireClosedEvent();
         }
 
         [Fact]
         public void TestClosingStreamsUndefinedDoesNotThrow()
         {
-            Process p = CreateProcessPortable(RemotelyInvokable.WriteLinesAfterClose);
+            Process p = CreateProcessPortable(RemotelyInvokable.WriteLinesAfterSignal);
+            p.StartInfo.RedirectStandardInput = true;
             p.StartInfo.RedirectStandardOutput = true;
             p.StartInfo.RedirectStandardError = true;
 
             p.Start();
+            p.StandardInput.WriteLine();
             p.Close();
-            RemotelyInvokable.FireClosedEvent();
+
+            // Accessing the streams at this point should throw because they have been closed
+            Assert.Throws<InvalidOperationException>(() => p.StandardOutput);
+            Assert.Throws<InvalidOperationException>(() => p.StandardError);
         }
 
         [Fact]
         public void TestClosingSyncModeDoesNotCloseStreams()
         {
-            Process p = CreateProcessPortable(RemotelyInvokable.WriteLinesAfterClose);
+            Process p = CreateProcessPortable(RemotelyInvokable.WriteLinesAfterSignal);
+            p.StartInfo.RedirectStandardInput = true;
             p.StartInfo.RedirectStandardOutput = true;
             p.StartInfo.RedirectStandardError = true;
 
@@ -272,11 +291,13 @@ namespace System.Diagnostics.Tests
             var output = p.StandardOutput;
             var error = p.StandardError;
 
+            p.StandardInput.WriteLine();
             p.Close();
-            RemotelyInvokable.FireClosedEvent();
 
-            output.ReadToEnd();
-            error.ReadToEnd();
+            Thread.Sleep(100);
+
+            Assert.Equal("This is a line to output" + Environment.NewLine, output.ReadToEnd());
+            Assert.Equal("This is a line to error" + Environment.NewLine, error.ReadToEnd());
         }
 
         [Fact]
