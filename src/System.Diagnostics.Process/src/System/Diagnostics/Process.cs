@@ -1218,35 +1218,44 @@ namespace System.Diagnostics
         }
 
 
-        // TODO: MATTKOT: Add overloads
-        public async Task<ProcessResult> StartAndWaitForExitAsync(CancellationToken cancellationToken = default)
+        // TODO: MATTKOT: Add overloads?
+        public async Task<Process> StartAndWaitForExitAsync(Action<string> onStandardOutputWrite = null, Action<string> onStandardErrorWrite = null, CancellationToken cancellationToken = default)
         {
-            EnableRaisingEvents = true;
-
-            // TODO: MATTKOT: There has to be a better way to do this
-            var outputTcs = new TaskCompletionSource<object>(TaskCreationOptions.RunContinuationsAsynchronously);
-            var errorTcs = new TaskCompletionSource<object>(TaskCreationOptions.RunContinuationsAsynchronously);
-
-            Start(); // TODO: MATTKOT: What to do about false?
-
-            var outputWriter = StreamWriter.Null;
-            var errorWriter = StreamWriter.Null;
-
-            if (StartInfo.RedirectStandardOutput)
+            if (StartInfo.RedirectStandardOutput && onStandardOutputWrite == null)
             {
-                outputWriter = new StreamWriter(new MemoryStream(), _standardOutput.CurrentEncoding);
-                OutputDataReceived += (sender, args) =>
+                throw new ArgumentNullException(nameof(onStandardOutputWrite));
+            }
+
+            if (StartInfo.RedirectStandardError && onStandardErrorWrite == null)
+            {
+                throw new ArgumentNullException(nameof(onStandardErrorWrite));
+            }
+
+            DataReceivedEventHandler AddWriter(TaskCompletionSource<object> tcs, Action<string> onWrite)
+            {
+                return (sender, args) =>
                 {
                     if (args.Data == null || cancellationToken.IsCancellationRequested)
                     {
-                        outputTcs.TrySetResult(null);
+                        tcs.TrySetResult(null);
                     }
                     else
                     {
-                        outputWriter.WriteLine(args.Data);
+                        onWrite(args.Data);
                     }
                 };
+            }
 
+            // TODO: MATTKOT: There has to be a better way to do this?
+            var outputTcs = new TaskCompletionSource<object>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var errorTcs = new TaskCompletionSource<object>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+            EnableRaisingEvents = true;
+            Start(); // TODO: MATTKOT: What to do about false?
+
+            if (StartInfo.RedirectStandardOutput)
+            {
+                OutputDataReceived += AddWriter(outputTcs, onStandardOutputWrite);
                 BeginOutputReadLine();
             }
             else
@@ -1256,19 +1265,7 @@ namespace System.Diagnostics
 
             if (StartInfo.RedirectStandardError)
             {
-                errorWriter = new StreamWriter(new MemoryStream(), _standardError.CurrentEncoding);
-                ErrorDataReceived += (sender, args) =>
-                {
-                    if (args.Data == null || cancellationToken.IsCancellationRequested)
-                    {
-                        errorTcs.TrySetResult(null);
-                    }
-                    else
-                    {
-                        errorWriter.WriteLine(args.Data);
-                    }
-                };
-
+                ErrorDataReceived += AddWriter(errorTcs, onStandardErrorWrite);
                 BeginErrorReadLine();
             }
             else
@@ -1276,17 +1273,9 @@ namespace System.Diagnostics
                 errorTcs.TrySetResult(null);
             }
 
-            var exited = await WaitForExitAsync(cancellationToken).ConfigureAwait(false);
-            await Task.WhenAll(outputTcs.Task, errorTcs.Task).ConfigureAwait(false);
+            await Task.WhenAll(WaitForExitAsync(cancellationToken), outputTcs.Task, errorTcs.Task).ConfigureAwait(false);
 
-            outputWriter.Flush();
-            errorWriter.Flush();
-            outputWriter.BaseStream.Seek(0, SeekOrigin.Begin);
-            errorWriter.BaseStream.Seek(0, SeekOrigin.Begin);
-
-            var exitCode = exited ? ExitCode : (int?)null;
-
-            return new ProcessResult(exited, exitCode, outputWriter.BaseStream, errorWriter.BaseStream);
+            return this;
         }
 
         /// <devdoc>
