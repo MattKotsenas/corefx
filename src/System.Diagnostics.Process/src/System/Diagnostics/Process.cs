@@ -1341,19 +1341,16 @@ namespace System.Diagnostics
         /// Instructs the Process component to wait for the associated process to exit, or
         /// for the <paramref name="cancellationToken"/> to be cancelled.
         /// </summary>
-        /// <returns>
-        /// Return true if the process has exited, false otherwise.
-        /// </returns>
-        public async Task<bool> WaitForExitAsync(CancellationToken cancellationToken = default)
+        public async Task WaitForExitAsync(CancellationToken cancellationToken = default)
         {
             if (!Associated) { throw new InvalidOperationException(SR.NoAssociatedProcess); }
             if (!EnableRaisingEvents) { throw new InvalidOperationException(SR.EnableRaisingEventsRequired); }
 
-            var tcs = new TaskCompletionSource<bool>(TaskContinuationOptions.RunContinuationsAsynchronously);
+            var tcs = new TaskCompletionSource<object>(TaskContinuationOptions.RunContinuationsAsynchronously);
 
             void ExitedHandler(object sender, EventArgs e)
             {
-                tcs.TrySetResult(true);
+                tcs.TrySetResult(null);
             }
 
             Exited += ExitedHandler;
@@ -1362,13 +1359,13 @@ namespace System.Diagnostics
             {
                 if (HasExited)
                 {
-                    // Catch the race where the process exited prior to registering the event handler
-                    tcs.TrySetResult(true);
+                    // Handle the race where the process exited prior to registering the event handler
+                    return;
                 }
 
-                using (cancellationToken.Register(() => tcs.TrySetResult(false)))
+                using (cancellationToken.Register(() => tcs.TrySetCanceled()))
                 {
-                    return await tcs.Task.ConfigureAwait(false);
+                    await tcs.Task.ConfigureAwait(false);
                 }
             }
             finally

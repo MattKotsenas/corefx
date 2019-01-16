@@ -122,7 +122,7 @@ namespace System.Diagnostics
         public static System.Diagnostics.Process Start(string fileName, string arguments, string userName, System.Security.SecureString password, string domain) { throw null; }
         public void WaitForExit() { }
         public bool WaitForExit(int milliseconds) { throw null; }
-        public System.Threading.Tasks.Task<bool> WaitForExitAsync(System.Threading.CancellationToken cancellationToken = default) { throw null; }
+        public System.Threading.Tasks.Task WaitForExitAsync(System.Threading.CancellationToken cancellationToken = default) { throw null; }
     }
     public partial class ProcessModule : System.ComponentModel.Component
     {
